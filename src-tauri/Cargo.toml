@@ -1,0 +1,30 @@
+[package]
+name = "notemancy-studio"
+version = "0.1.0"
+description = "A Tauri App"
+authors = ["you"]
+edition = "2021"
+
+[lib]
+name = "notemancy_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+dirs = "4.0"  # Add this for path handling in build script
+
+[dependencies]
+tauri = { version = "2", features = ["devtools"] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+notemancy-core = {path="../../notemancy-core", version="0.1"}
+rand = "0.8"
+
+# Add this section for resource bundling
+[package.metadata.bundle]
+resources = ["resources/*.dylib"]
+
+# Add this to ensure the dynamic libraries are included
+[package.metadata.tauri.bundle]
+resources = ["resources"]

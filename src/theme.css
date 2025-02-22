@@ -1,0 +1,22 @@
+@theme {
+  --color-blue-50: '#ecf5ff';
+  --color-blue-100: '#d0e2ff';
+  --color-blue-200: '#a6c8ff';
+  --color-blue-300: '#77a9fe';
+  --color-blue-400: '#4589ff';
+  --color-blue-500: '#0e61fe';
+  --color-blue-600: '#0043ce';
+  --color-blue-700: '#012d9c';
+  --color-blue-800: '#001d6c';
+  --color-blue-900: '#001141';
+  --color-gray-50: '#f4f4f4';
+  --color-gray-100: '#e0e0e0';
+  --color-gray-200: '#c6c6c6';
+  --color-gray-300: '#a8a8a8';
+  --color-gray-400: '#8d8d8d';
+  --color-gray-500: '#6f6f6f';
+  --color-gray-600: '#525252';
+  --color-gray-700: '#262626';
+  --color-gray-800: '#161616';
+  --color-gray-900: '#000000';
+}

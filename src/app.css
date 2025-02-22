@@ -1,0 +1,60 @@
+@import 'tailwindcss';
+@custom-variant dark (&:where(.dark, .dark *));
+/* @import "./theme.css" layer(theme); */
+@plugin '@tailwindcss/typography';
+
+@layer base {
+  body {
+    margin: 0;
+    padding: 0;
+  }
+}
+
+@theme {
+  --color-blue-50: oklch(96.63% 0.0165 250.84);
+  --color-blue-100: oklch(90.85% 0.044267 259.9521);
+  --color-blue-200: oklch(82.76% 0.0861 259.9);
+  --color-blue-300: oklch(73.54% 0.1351 260.53);
+  --color-blue-400: oklch(64.7% 0.1888 260.58);
+  --color-blue-500: oklch(55.46% 0.2442 262.02);
+  --color-blue-600: oklch(45.4% 0.221 262.63);
+  --color-blue-700: oklch(36.32% 0.1838 263.2);
+  --color-blue-800: oklch(27.96% 0.1403 262.95);
+  --color-blue-900: oklch(20.44% 0.0948 262.03);
+  --color-gray-50: oklch(96.72% 0 0);
+  --color-gray-100: oklch(90.67% 0 0);
+  --color-gray-200: oklch(82.66% 0 0);
+  --color-gray-300: oklch(73.16% 0 0);
+  --color-gray-400: oklch(64.34% 0 0);
+  --color-gray-500: oklch(54.17% 0 0);
+  --color-gray-600: oklch(43.86% 0 0);
+  --color-gray-700: oklch(26.86% 0 0);
+  --color-gray-800: oklch(20.02% 0 0);
+  --color-gray-900: oklch(0% 0 0);
+
+}
+
+@utility prose {
+  --tw-prose-links: var(--color-blue-500);
+  --tw-prose-invert-links: var(--color-blue-300);
+  --tw-prose-bullets: var(--color-blue-600);
+  --tw-prose-body: var(--color-gray-600);
+  --tw-prose-headings: var(--color-gray-800);
+  --tw-prose-invert-body: var(--color-gray-100);
+  --tw-prose-invert-headings: var(--color-gray-50);
+  --tw-prose-counters: var(--color-blue-600);
+  --tw-prose-invert-bullets: var(--color-blue-400);
+  --tw-prose-invert-counters: var(--color-blue-400);
+
+  a {
+    text-decoration: none;
+  }
+
+  /* p, */
+  /* ul, */
+  /* ol { */
+  /* font-size: 16px; */
+  /* font-weight: 400; */
+  /* } */
+
+}
