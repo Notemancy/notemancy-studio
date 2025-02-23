@@ -87,7 +87,7 @@
 	<div
 		use:melt={$content}
 		transition:fly={{ duration: 150, y: -8 }}
-		class="border-muted shadow-popover mt-2 w-[500px] h-[500px] overflow-auto rounded-xl border bg-white p-1"
+		class="border-muted shadow-popover mt-2 w-[500px] h-[500px] overflow-auto rounded-xl border bg-white p-4"
 	>
 		<div
 			class="prose lg:prose-base dark:prose-invert mt-0 pt-0 font-normal font-[Noto_Sans] w-full h-full"

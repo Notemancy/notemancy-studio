@@ -24,6 +24,7 @@
     "@tauri-apps/api": "^2.2.0",
     "@tauri-apps/plugin-opener": "^2",
     "carta-md": "^4.7.0",
+    "easymde": "^2.19.0",
     "isomorphic-dompurify": "^2.22.0",
     "katex": "^0.16.21",
     "rehype-katex": "^7.0.1",

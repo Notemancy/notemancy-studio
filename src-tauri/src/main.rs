@@ -1,6 +1,7 @@
-use notemancy_core::{config, fetch::Fetch, scan::Scanner, test_utils};
+use notemancy_core::{config, fetch::Fetch, file_ops};
 use serde::Serialize;
 use serde_json::Value;
+use tauri::Emitter;
 use tauri::State;
 
 #[derive(Serialize, Debug)]
@@ -80,7 +81,7 @@ async fn get_file_tree(state: State<'_, FetchState>) -> Result<Vec<TreeItem>, St
     Ok(root)
 }
 
-fn sort_tree(nodes: &mut Vec<TreeItem>) {
+fn sort_tree(nodes: &mut [TreeItem]) {
     nodes.sort_by(|a, b| a.title.cmp(&b.title));
     for node in nodes.iter_mut() {
         if let Some(ref mut children) = node.children {
@@ -149,13 +150,39 @@ async fn get_page_content(
     }
 }
 
+#[tauri::command]
+async fn update_page_content(
+    app: tauri::AppHandle,
+    content: String,
+    path: Option<String>,
+    virtual_path: Option<String>,
+) -> Result<(), String> {
+    // Notify the frontend that saving has started.
+    app.emit("file-saving", ()).map_err(|e| e.to_string())?;
+
+    // Use our file module to update the markdown file.
+    let result = file_ops::update_markdown_file(&content, path.as_deref(), virtual_path.as_deref());
+    match result {
+        Ok(()) => {
+            // Emit success event
+            app.emit("file-saved", ()).map_err(|e| e.to_string())?;
+            Ok(())
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 fn main() {
     // Initialize environment and get Fetch instance
     let fetch = setup_environment().expect("Failed to setup environment");
 
     tauri::Builder::default()
         .manage(FetchState(fetch))
-        .invoke_handler(tauri::generate_handler![get_page_content, get_file_tree]) // Add get_file_tree
+        .invoke_handler(tauri::generate_handler![
+            get_page_content,
+            get_file_tree,
+            update_page_content
+        ]) // Add get_file_tree
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

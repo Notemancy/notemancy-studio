@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from "svelte";
+  import "./tw.css";
 
   //import Markdown from "svelte-exmarkdown";
   import { math } from "@cartamd/plugin-math";
@@ -9,12 +10,14 @@
 
   import DOMPurify from "isomorphic-dompurify";
   import "katex/dist/katex.css";
-  import { Carta, Markdown } from "carta-md";
+  import { Carta, Markdown, MarkdownEditor } from "carta-md";
 
   // Your MD plugins (assume imported as before)
   import cartawiki from "./lib/cartawiki";
   import everforest_dark from "shiki/themes/everforest-dark.mjs";
   import everforest_light from "shiki/themes/everforest-light.mjs";
+  import min_dark from "shiki/themes/min-dark.mjs";
+  import min_light from "shiki/themes/min-light.mjs";
   import remarkImages from "./lib/mdplugins/remarkImages";
 
   import FileTree from "./lib/FileTree.svelte";
@@ -25,10 +28,7 @@
   import { page } from "$app/stores";
 
   import { svelteCustom } from "@cartamd/plugin-component/svelte";
-  import {
-    svelte,
-    initializeComponents,
-  } from "@cartamd/plugin-component/svelte";
+  import { initializeComponents } from "@cartamd/plugin-component/svelte";
   import { component } from "@cartamd/plugin-component";
 
   import WikiLinkPreview from "./lib/mdplugins/WikiLinkPreview.svelte";
@@ -42,7 +42,6 @@
   let md = $state("");
   let metadata = $state({});
   // Hardcoded values (replacing env variables)
-  const site_title = "Gnosis";
   const git = "richwill28";
   const email = "richwindsor@email.com";
 
@@ -208,26 +207,83 @@
     ),
   ];
 
-  const carta = new Carta({
-    extensions: [
-      cartawiki,
-      component(mapped, initializeComponents),
-      math(),
-      anchor(),
-      code({
-        theme: everforest_dark,
-        langs: [
-          "javascript",
-          "docker",
-          "py",
-          "markdown",
-          "yaml",
-          "toml",
-          "bash",
-        ],
-      }),
-    ],
-    sanitizer: DOMPurify.sanitize,
+  let editorTheme = $state(min_light);
+
+  function initializeCarta() {
+    // Choose the editor theme based on current mode.
+    editorTheme = currentTheme === "dark" ? min_dark : min_light;
+    carta = new Carta({
+      theme: editorTheme,
+      shikiOptions: {
+        // Provide both themes for dual mode support.
+        themes: [min_light, min_dark],
+      },
+      extensions: [
+        cartawiki,
+        component(mapped, initializeComponents),
+        math(),
+        anchor(),
+        code({
+          langs: [
+            "javascript",
+            "docker",
+            "py",
+            "markdown",
+            "yaml",
+            "toml",
+            "bash",
+          ],
+        }),
+      ],
+      sanitizer: DOMPurify.sanitize,
+    });
+  }
+
+  let carta = $state(
+    new Carta({
+      theme: editorTheme,
+      shikiOptions: {
+        // Provide both themes for dual mode support.
+        themes: [everforest_light, everforest_dark],
+      },
+      extensions: [
+        cartawiki,
+        component(mapped, initializeComponents),
+        math(),
+        anchor(),
+        code({
+          langs: [
+            "javascript",
+            "docker",
+            "py",
+            "markdown",
+            "yaml",
+            "toml",
+            "bash",
+          ],
+        }),
+      ],
+      sanitizer: DOMPurify.sanitize,
+    }),
+  );
+
+  let isEditing = $state(false);
+
+  // Set up global keyboard shortcuts for toggling modes.
+  function handleKeyDown(event: KeyboardEvent) {
+    if (event.ctrlKey && event.key.toLowerCase() === "l") {
+      console.log("pressed");
+      isEditing = !isEditing;
+      event.preventDefault();
+    }
+  }
+
+  onMount(() => {
+    window.addEventListener("keydown", handleKeyDown);
+  });
+
+  onDestroy(() => {
+    window.removeEventListener("keydown", handleKeyDown);
   });
 </script>
 
@@ -252,7 +308,19 @@
         />
       </button>
       {#if sidebarOpen}
-        <button onclick={toggleTheme} class="flex items-center">
+        <button
+          onclick={() => {
+            if (currentTheme === "light") {
+              document.documentElement.classList.add("dark");
+              currentTheme = "dark";
+            } else {
+              document.documentElement.classList.remove("dark");
+              currentTheme = "light";
+            }
+            // Reinitialize Carta with the updated theme.
+            initializeCarta();
+          }}
+        >
           {#if currentTheme === "dark"}
             <Icon
               icon="tabler:sun-filled"
@@ -283,35 +351,46 @@
     class="pl-4 transition-all duration-300"
     style="margin-left: {sidebarWidth};"
   >
-    <div class="grid grid-cols-1 gap-4">
-      <!-- Markdown Content Container -->
+    <!-- Markdown Content Container -->
+    <div class="mt-0 max-w-[700px] pt-0">
       <div
-        class="prose lg:prose-base dark:prose-invert mt-0 max-w-[700px] pt-0 font-normal font-[Noto_Sans]"
+        class="mt-0 mb-4 border-b border-gray-300 pt-0 pb-3.5 text-[1.8rem] font-normal"
       >
-        <div
-          class="mt-0 mb-4 border-b border-gray-300 pt-0 pb-3.5 text-[1.8rem] font-normal"
-        >
-          <a
-            class="mt-0 pt-0 text-gray-800 hover:text-blue-600 dark:text-gray-50 dark:hover:text-blue-500"
-            href="/"
-          >
-            {metadata.title || "Notemancy"}
-          </a>
-        </div>
-        <div class="justify-left mb-8 flex items-start gap-5">
-          <div>
-            <a href={`https://github.com/${git}`} target="_blank">Github</a>
-          </div>
-          <div>
-            <a href={`mailto:${email}`} target="_blank">Email</a>
-          </div>
-        </div>
-        <div id="mdcontent">
-          {#key md}
-            <Markdown {carta} value={md} />
-          {/key}
+        <div class="mt-0 pt-0 text-gray-800 dark:text-gray-50">
+          {metadata.title || "Notemancy"}
         </div>
       </div>
+      <div
+        class="justify-left mb-8 flex items-start gap-5 prose prose-base dark:prose-invert"
+      >
+        <a href={`https://github.com/${git}`} target="_blank">Github</a>
+        <a href={`mailto:${email}`} target="_blank">Email</a>
+      </div>
+
+      {#if isEditing}
+        <div class="max-w-[700px] prose prose-sm dark:prose-invert">
+          {#key currentTheme}
+            <MarkdownEditor
+              {carta}
+              value={md}
+              disableToolbar={true}
+              theme={"tw"}
+            />
+          {/key}
+        </div>
+      {:else}
+        <div
+          id="mdcontent"
+          class="prose dark:prose-invert font-normal font-[Noto_Sans] max-w-[700px]"
+        >
+          {#key currentTheme}
+            {#key md}
+              <Markdown {carta} value={md} />
+            {/key}
+          {/key}
+        </div>
+      {/if}
+
       <!-- TOC Sidebar -->
     </div>
   </div>
@@ -323,10 +402,10 @@
 
 <!-- (Optional) Global styles for markdown, etc. -->
 <style>
-  @import url("https://fonts.googleapis.com/css2?family=Lora:wght@400;700&display=swap");
-  @import url("https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,100..900;1,100..900&family=Noto+Serif:ital,wght@0,100..900;1,100..900&display=swap");
+  @import url("https://fonts.googleapis.com/css2?family=Noto+Sans+Mono:wght@100..900&family=Noto+Sans:ital,wght@0,100..900;1,100..900&family=Noto+Serif:ital,wght@0,100..900;1,100..900&display=swap");
+
   :global(blockquote) {
-    font-family: "Lora", serif;
+    font-family: "Noto Sans Serif", serif;
     font-size: 1.2em;
     font-style: italic;
     color: #444;
@@ -346,11 +425,20 @@
   :global(blockquote cite::before) {
     content: "— ";
   }
-  :global(.shiki) {
+  /*:global(.shiki) {
     font-size: 16px;
-  }
+  }*/
 
   :global(img) {
     border-radius: 6px;
   }
+
+  /*:global(.carta-font-code),
+  :global(.carta-font-code *) {
+    font-family: "Noto Sans", sans-serif !important;
+    font-variant-ligatures: normal !important;
+    font-size: 1rem !important;
+    line-height: 1.5rem !important;
+    caret-color: black;
+  }*/
 </style>
