@@ -20,6 +20,10 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 notemancy-core = {path="../../notemancy-core", version="0.1"}
 rand = "0.8"
+axum = { version = "0.7", features = ["json"] }
+tokio = { version = "1.0", features = ["full"] }
+tower-http = { version = "0.5", features = ["cors"] }
+tower = { version = "0.4" }
 
 # Add this section for resource bundling
 [package.metadata.bundle]

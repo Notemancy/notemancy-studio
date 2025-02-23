@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from "svelte";
   import "./tw.css";
+  import { api } from "$lib/api/client";
 
   //import Markdown from "svelte-exmarkdown";
   import { math } from "@cartamd/plugin-math";
@@ -24,7 +25,6 @@
   import ToC from "$lib/components/ToC.svelte";
   import rehypeMermaid from "rehype-mermaid";
 
-  import { invoke } from "@tauri-apps/api/core";
   import { page } from "$app/stores";
 
   import { svelteCustom } from "@cartamd/plugin-component/svelte";
@@ -47,44 +47,43 @@
 
   let currentVirtualPath = $state("");
 
-  // Add content fetching
   async function fetchContent() {
     try {
       const path = $page.params.path || "home.md";
-      // Replace %20 with a space in the path
       const decodedPath = path.replace(/%20/g, " ");
       currentVirtualPath = decodedPath;
-      console.log("Fetching content for path:", decodedPath);
-      const response = await invoke("get_page_content", {
-        virtualPath: decodedPath,
-      });
 
-      if (typeof response === "object" && response !== null) {
-        const typedResponse = response as PageContent;
-        md = typedResponse.content;
-        try {
-          // If metadata is a string, parse it; otherwise assume it's already an object.
-          metadata =
-            typeof typedResponse.metadata === "string"
-              ? JSON.parse(typedResponse.metadata)
-              : typedResponse.metadata;
-          console.log("Metadata:", metadata);
-        } catch (e) {
-          console.error("Error parsing metadata:", e);
-          metadata = {};
-        }
-      } else {
-        throw new Error("Unexpected response format");
+      const response = await api.getPageContent(decodedPath);
+
+      // Handle potential Ok wrapper and validate response
+      if (!response || typeof response !== "object") {
+        throw new Error(`Invalid response format: ${JSON.stringify(response)}`);
       }
+
+      // Set content and metadata, with fallbacks
+      md = response.content || "";
+      metadata = response.metadata || {};
     } catch (e) {
       console.error("Error fetching content:", e);
-      md = "Error loading content: " + e.toString();
+      console.error("Full error details:", {
+        name: e.name,
+        message: e.message,
+        stack: e.stack,
+        api: api.constructor.name,
+      });
+
+      md =
+        "Error loading content: " +
+        (e instanceof Error ? e.message : String(e));
+      metadata = {};
     }
   }
 
   // Replace the effect with our fetch
   $effect(() => {
-    $page.params.path && fetchContent();
+    if ($page.params.path) {
+      fetchContent();
+    }
   });
 
   onMount(() => {
@@ -288,7 +287,6 @@
   // Set up global keyboard shortcuts for toggling modes.
   function handleKeyDown(event: KeyboardEvent) {
     if (event.ctrlKey && event.key.toLowerCase() === "l") {
-      console.log("pressed");
       isEditing = !isEditing;
       event.preventDefault();
     }
@@ -302,47 +300,44 @@
     window.removeEventListener("keydown", handleKeyDown);
   });
 
-  $inspect(md);
   $inspect(currentVirtualPath);
 
   let autoSaveTimer: any = null;
-  let savingStatus: "" | "saving" | "saved" = $state("");
+  let savingStatus: "" | "error" | "saving" | "saved" = $state("");
 
   $effect(() => {
-    // Clear the previous timer if it exists.
     const deps = [md, currentVirtualPath, isEditing];
 
-    // Only set auto-save when editing.
+    // Only set auto-save when editing
     if (isEditing) {
       clearTimeout(autoSaveTimer);
       autoSaveTimer = setTimeout(async () => {
-        if (md) {
-          // Use a default virtual path if currentVirtualPath is empty.
-          const effectivePath =
-            currentVirtualPath && currentVirtualPath.trim().length > 0
-              ? currentVirtualPath
-              : "home.md";
-
-          savingStatus = "saving";
-          try {
-            // Pass both required arguments (using null for `path`).
-            await invoke("update_page_content", {
-              content: md,
-              path: null,
-              virtualPath: effectivePath,
-            });
-            savingStatus = "saved";
-            console.log("Auto-save succeeded.");
-            // Clear the saved status after 2 seconds.
-            setTimeout(() => {
-              savingStatus = "";
-            }, 2000);
-          } catch (error) {
-            console.error("Auto-save failed:", error);
-            savingStatus = "";
-          }
-        } else {
+        if (!md) {
           console.warn("Auto-save aborted: Missing content", { md });
+          return;
+        }
+
+        const effectivePath = currentVirtualPath?.trim() || "home.md";
+        savingStatus = "saving";
+
+        try {
+          await api.updatePageContent(md, null, effectivePath);
+          savingStatus = "saved";
+
+          // Clear the saved status after 2 seconds
+          setTimeout(() => {
+            savingStatus = "";
+          }, 2000);
+        } catch (error) {
+          console.error("Auto-save failed:", error);
+          savingStatus = "error";
+
+          // Clear error status after 3 seconds
+          setTimeout(() => {
+            if (savingStatus === "error") {
+              savingStatus = "";
+            }
+          }, 3000);
         }
       }, 500);
     }
@@ -461,9 +456,11 @@
     </div>
   </div>
 
-  <div class="fixed top-5 right-5 flex w-[300px] justify-start">
-    <ToC {headings} {activeHeading} />
-  </div>
+  {#if !isEditing}
+    <div class="fixed top-5 right-5 flex w-[300px] justify-start">
+      <ToC {headings} {activeHeading} />
+    </div>
+  {/if}
 
   {#if savingStatus}
     <div
@@ -509,6 +506,12 @@
 
   :global(img) {
     border-radius: 6px;
+  }
+
+  :global([id^="mermaid-"]) {
+    width: 60vw;
+    max-width: 80vw;
+    position: relative;
   }
 
   /*:global(.carta-font-code),

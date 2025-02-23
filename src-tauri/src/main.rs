@@ -1,9 +1,18 @@
-use notemancy_core::{config, fetch::Fetch, file_ops};
-use serde::Serialize;
-use serde_json::Value;
+use axum::{
+    extract::State,
+    routing::{get, post},
+    Json, Router,
+};
 use tauri::Emitter;
-use tauri::State;
 
+use notemancy_core::{config, fetch::Fetch, file_ops};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use tower_http::cors::CorsLayer;
+
+// Existing structs
 #[derive(Serialize, Debug)]
 struct PageResponse {
     content: String,
@@ -17,14 +26,48 @@ struct TreeItem {
     children: Option<Vec<TreeItem>>,
 }
 
-struct FetchState(Fetch);
+// New request structs for web API
+#[derive(Deserialize)]
+struct UpdatePageRequest {
+    content: String,
+    path: Option<String>,
+    virtual_path: Option<String>,
+}
 
-#[tauri::command]
-async fn get_file_tree(state: State<'_, FetchState>) -> Result<Vec<TreeItem>, String> {
-    // Get files from database
-    let files = state.0.get_file_tree().map_err(|e| e.to_string())?;
+// Shared state
+struct AppState {
+    fetch: Arc<Mutex<Fetch>>,
+}
 
-    // Build tree structure
+// Web API handlers
+async fn web_get_file_tree(
+    State(state): State<Arc<AppState>>,
+) -> Json<Result<Vec<TreeItem>, String>> {
+    let fetch = state.fetch.lock().await;
+    let result = get_file_tree_internal(&fetch);
+    Json(result)
+}
+
+async fn web_get_page_content(
+    State(state): State<Arc<AppState>>,
+    path: axum::extract::Path<String>,
+) -> Json<Result<PageResponse, String>> {
+    let fetch = state.fetch.lock().await;
+    let result = get_page_content_internal(&fetch, path.0);
+    Json(result)
+}
+
+async fn web_update_page_content(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<UpdatePageRequest>,
+) -> Json<Result<(), String>> {
+    let result = update_page_content_internal(payload.content, payload.path, payload.virtual_path);
+    Json(result)
+}
+
+// Core business logic
+fn get_file_tree_internal(fetch: &Fetch) -> Result<Vec<TreeItem>, String> {
+    let files = fetch.get_file_tree().map_err(|e| e.to_string())?;
     let mut root: Vec<TreeItem> = Vec::new();
 
     for file in files {
@@ -37,19 +80,14 @@ async fn get_file_tree(state: State<'_, FetchState>) -> Result<Vec<TreeItem>, St
 
         for (i, part) in parts.iter().enumerate() {
             let is_last = i == parts.len() - 1;
-
-            // Try to find existing node
             let node_index = current_level.iter().position(|item| item.title == *part);
 
             if let Some(index) = node_index {
-                // Node exists, move to its children
                 if !is_last {
                     current_level = current_level[index].children.as_mut().unwrap();
                 }
             } else {
-                // Create new node
                 if is_last {
-                    // File node
                     let mut title = part.to_string();
                     if let Ok(meta) = serde_json::from_str::<serde_json::Value>(&file.metadata) {
                         if let Some(meta_title) = meta.get("title").and_then(|t| t.as_str()) {
@@ -63,74 +101,30 @@ async fn get_file_tree(state: State<'_, FetchState>) -> Result<Vec<TreeItem>, St
                         children: None,
                     });
                 } else {
-                    // Folder node
-                    let new_node = TreeItem {
+                    current_level.push(TreeItem {
                         title: part.to_string(),
                         link: None,
                         children: Some(Vec::new()),
-                    };
-                    current_level.push(new_node);
+                    });
                     current_level = current_level.last_mut().unwrap().children.as_mut().unwrap();
                 }
             }
         }
     }
 
-    // Sort tree recursively
     sort_tree(&mut root);
     Ok(root)
 }
 
-fn sort_tree(nodes: &mut [TreeItem]) {
-    nodes.sort_by(|a, b| a.title.cmp(&b.title));
-    for node in nodes.iter_mut() {
-        if let Some(ref mut children) = node.children {
-            sort_tree(children);
-        }
-    }
-}
-
-#[cfg(feature = "test-env")]
-fn setup_environment() -> Result<Fetch, Box<dyn std::error::Error>> {
-    // Only for testing: setup test environment
-    test_utils::setup_test_env(100)?;
-    let config = config::load_config()?;
-    println!("Test Config loaded: {:?}", config);
-    // Optionally, run a scanner or other test-specific code here.
-    let scanner = Scanner::from_config()?;
-    let md_files = scanner.scan_markdown_files()?;
-    println!("Scanned {} markdown files in test mode", md_files.len());
-    let fetch = Fetch::new()?;
-    Ok(fetch)
-}
-
-#[cfg(not(feature = "test-env"))]
-fn setup_environment() -> Result<Fetch, Box<dyn std::error::Error>> {
-    // Normal production environment setup
-    let config = config::load_config()?;
-    println!("Config loaded: {:?}", config);
-    // You can choose to omit scanning or perform production-specific tasks.
-    let fetch = Fetch::new()?;
-    Ok(fetch)
-}
-
-#[tauri::command]
-async fn get_page_content(
-    state: State<'_, FetchState>,
-    virtual_path: String,
-) -> Result<PageResponse, String> {
+fn get_page_content_internal(fetch: &Fetch, virtual_path: String) -> Result<PageResponse, String> {
     let path_to_use = if virtual_path.is_empty() {
         "home.md"
     } else {
         &virtual_path
     };
 
-    println!("Fetching content for path: {}", path_to_use);
-
-    match state.0.get_page_content(path_to_use) {
+    match fetch.get_page_content(path_to_use) {
         Ok(page_content) => {
-            println!("Raw metadata string: '{}'", page_content.metadata);
-
             let metadata_json = if page_content.metadata.trim().is_empty() {
                 serde_json::json!({})
             } else {
@@ -143,11 +137,33 @@ async fn get_page_content(
                 metadata: metadata_json,
             })
         }
-        Err(e) => {
-            eprintln!("Error fetching content: {:?}", e);
-            Err(e.to_string())
-        }
+        Err(e) => Err(e.to_string()),
     }
+}
+
+fn update_page_content_internal(
+    content: String,
+    path: Option<String>,
+    virtual_path: Option<String>,
+) -> Result<(), String> {
+    file_ops::update_markdown_file(&content, path.as_deref(), virtual_path.as_deref())
+        .map_err(|e| e.to_string())
+}
+
+struct FetchState(Fetch);
+
+// Tauri commands
+#[tauri::command]
+async fn get_file_tree(state: tauri::State<'_, FetchState>) -> Result<Vec<TreeItem>, String> {
+    get_file_tree_internal(&state.0)
+}
+
+#[tauri::command]
+async fn get_page_content(
+    state: tauri::State<'_, FetchState>,
+    virtual_path: String,
+) -> Result<PageResponse, String> {
+    get_page_content_internal(&state.0, virtual_path)
 }
 
 #[tauri::command]
@@ -157,45 +173,77 @@ async fn update_page_content(
     path: Option<String>,
     virtual_path: Option<String>,
 ) -> Result<(), String> {
-    println!(
-        "update_page_content called with content length: {} and virtual_path: {:?} and path: {:?}",
-        content.len(),
-        virtual_path,
-        path
-    );
     app.emit("file-saving", ()).map_err(|e| e.to_string())?;
+    let result = update_page_content_internal(content, path, virtual_path);
+    if result.is_ok() {
+        app.emit("file-saved", ()).map_err(|e| e.to_string())?;
+    }
+    result
+}
 
-    // If virtual_path is empty, use a default value (similar to get_page_content)
-    // let virtual_path = match virtual_path {
-    //     Some(v) if v.trim().is_empty() => Some("home.md".to_string()),
-    //     other => other,
-    // };
-
-    let result = file_ops::update_markdown_file(&content, path.as_deref(), virtual_path.as_deref());
-    match result {
-        Ok(()) => {
-            println!("File saved successfully.");
-            app.emit("file-saved", ()).map_err(|e| e.to_string())?;
-            Ok(())
-        }
-        Err(e) => {
-            println!("File saving failed: {:?}", e);
-            Err(e.to_string())
+fn sort_tree(nodes: &mut [TreeItem]) {
+    nodes.sort_by(|a, b| a.title.cmp(&b.title));
+    for node in nodes.iter_mut() {
+        if let Some(ref mut children) = node.children {
+            sort_tree(children);
         }
     }
 }
 
-fn main() {
-    // Initialize environment and get Fetch instance
-    let fetch = setup_environment().expect("Failed to setup environment");
+#[tokio::main]
+async fn main() {
+    // Create two separate Fetch instances
+    let tauri_fetch = setup_environment().expect("Failed to setup environment");
+    let web_fetch = setup_environment().expect("Failed to setup environment");
 
+    // Set up web server state
+    let app_state = Arc::new(AppState {
+        fetch: Arc::new(Mutex::new(web_fetch)),
+    });
+
+    let api_router = Router::new()
+        .route("/api/file-tree", get(web_get_file_tree))
+        .route("/api/page/:path", get(web_get_page_content))
+        .route("/api/page", post(web_update_page_content))
+        .layer(CorsLayer::permissive())
+        .with_state(app_state);
+
+    // Start web server in a separate task
+    tokio::spawn(async move {
+        let addr = std::net::SocketAddr::from(([127, 0, 0, 1], 3001));
+        println!("Starting web server on {}", addr);
+        let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+        axum::serve(listener, api_router).await.unwrap();
+    });
+
+    // Start Tauri application
     tauri::Builder::default()
-        .manage(FetchState(fetch))
+        .manage(FetchState(tauri_fetch))
         .invoke_handler(tauri::generate_handler![
             get_page_content,
             get_file_tree,
             update_page_content
-        ]) // Add get_file_tree
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(feature = "test-env")]
+fn setup_environment() -> Result<Fetch, Box<dyn std::error::Error>> {
+    test_utils::setup_test_env(100)?;
+    let config = config::load_config()?;
+    println!("Test Config loaded: {:?}", config);
+    let scanner = Scanner::from_config()?;
+    let md_files = scanner.scan_markdown_files()?;
+    println!("Scanned {} markdown files in test mode", md_files.len());
+    let fetch = Fetch::new()?;
+    Ok(fetch)
+}
+
+#[cfg(not(feature = "test-env"))]
+fn setup_environment() -> Result<Fetch, Box<dyn std::error::Error>> {
+    let config = config::load_config()?;
+    println!("Config loaded: {:?}", config);
+    let fetch = Fetch::new()?;
+    Ok(fetch)
 }

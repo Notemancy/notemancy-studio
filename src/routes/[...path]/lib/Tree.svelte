@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { melt, type TreeView } from '@melt-ui/svelte';
-	import { getContext } from 'svelte';
-	import { goto } from '$app/navigation';
-	import Icon from '@iconify/svelte';
+	import { melt, type TreeView } from "@melt-ui/svelte";
+	import { getContext } from "svelte";
+	import { goto } from "$app/navigation";
+	import Icon from "@iconify/svelte";
 
 	// Define the type for a tree item.
 	export type TreeItem = {
@@ -17,19 +17,24 @@
 	// Get the tree view context from Melt UI.
 	const {
 		elements: { item, group },
-		helpers: { isExpanded, isSelected }
-	} = getContext<TreeView>('tree');
+		helpers: { isExpanded, isSelected },
+	} = getContext<TreeView>("tree");
 
 	// Group folders (with children) and files (without children) separately.
-	$: folders = treeItems.filter((t) => t.children && t.children.length > 0);
-	$: files = treeItems.filter((t) => !t.children || t.children.length === 0);
-
+	$: folders = Array.isArray(treeItems)
+		? treeItems.filter((t) => t?.children && t.children.length > 0)
+		: [];
+	$: files = Array.isArray(treeItems)
+		? treeItems.filter(
+				(t): t is TreeItem => !!t && (!t.children || t.children.length === 0),
+			)
+		: [];
 	// If a link is defined, navigate using SvelteKit's goto.
 	function handleClick(e: MouseEvent, link?: string) {
 		if (link) {
 			e.preventDefault();
 			e.stopPropagation();
-			goto('/' + link);
+			goto("/" + link);
 		}
 	}
 </script>
@@ -47,8 +52,8 @@
 			<!-- Chevron for folders -->
 			<Icon
 				icon="mynaui:chevron-right-solid"
-				class={'h-5 w-5 transition-transform duration-200 ' +
-					($isExpanded(itemId) ? 'rotate-90' : '')}
+				class={"h-5 w-5 transition-transform duration-200 " +
+					($isExpanded(itemId) ? "rotate-90" : "")}
 			/>
 			<span class="flex-1 text-left font-semibold">{treeItem.title}</span>
 		</button>
