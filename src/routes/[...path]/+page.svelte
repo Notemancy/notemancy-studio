@@ -2,6 +2,8 @@
   import { onMount, onDestroy, tick } from "svelte";
   import "./tw.css";
   import { api } from "$lib/api/client";
+  import rehypeCallouts from "rehype-callouts";
+  import "rehype-callouts/theme/vitepress";
 
   //import Markdown from "svelte-exmarkdown";
   import { math } from "@cartamd/plugin-math";
@@ -220,6 +222,18 @@
     ],
   };
 
+  const callouts: Plugin = {
+    transformers: [
+      {
+        execution: "async",
+        type: "rehype",
+        transform({ processor }) {
+          processor.use(rehypeCallouts);
+        },
+      },
+    ],
+  };
+
   let editorTheme = $state(min_light);
 
   function initializeCarta() {
@@ -235,6 +249,7 @@
         cartawiki,
         component(mapped, initializeComponents),
         math(),
+        callouts,
         mermaid,
         anchor(),
         code({
@@ -264,6 +279,7 @@
         cartawiki,
         component(mapped, initializeComponents),
         math(),
+        callouts,
         anchor(),
         mermaid,
         code({
@@ -479,7 +495,7 @@
 <style>
   @import url("https://fonts.googleapis.com/css2?family=Noto+Sans+Mono:wght@100..900&family=Noto+Sans:ital,wght@0,100..900;1,100..900&family=Noto+Serif:ital,wght@0,100..900;1,100..900&display=swap");
 
-  :global(blockquote) {
+  /*:global(blockquote) {
     font-family: "Noto Sans Serif", serif;
     font-size: 1.2em;
     font-style: italic;
@@ -496,7 +512,7 @@
     font-style: normal;
     color: #666;
     margin-top: 0.5em;
-  }
+  }*/
   :global(blockquote cite::before) {
     content: "— ";
   }
