@@ -425,7 +425,7 @@
 
   <!-- Main Content Area -->
   <div
-    class="pl-4 transition-all duration-300"
+    class="pl-8 transition-all duration-300"
     style="margin-left: {sidebarWidth};"
   >
     <!-- Markdown Content Container -->
