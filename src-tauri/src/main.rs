@@ -157,18 +157,31 @@ async fn update_page_content(
     path: Option<String>,
     virtual_path: Option<String>,
 ) -> Result<(), String> {
-    // Notify the frontend that saving has started.
+    println!(
+        "update_page_content called with content length: {} and virtual_path: {:?} and path: {:?}",
+        content.len(),
+        virtual_path,
+        path
+    );
     app.emit("file-saving", ()).map_err(|e| e.to_string())?;
 
-    // Use our file module to update the markdown file.
+    // If virtual_path is empty, use a default value (similar to get_page_content)
+    // let virtual_path = match virtual_path {
+    //     Some(v) if v.trim().is_empty() => Some("home.md".to_string()),
+    //     other => other,
+    // };
+
     let result = file_ops::update_markdown_file(&content, path.as_deref(), virtual_path.as_deref());
     match result {
         Ok(()) => {
-            // Emit success event
+            println!("File saved successfully.");
             app.emit("file-saved", ()).map_err(|e| e.to_string())?;
             Ok(())
         }
-        Err(e) => Err(e.to_string()),
+        Err(e) => {
+            println!("File saving failed: {:?}", e);
+            Err(e.to_string())
+        }
     }
 }
 

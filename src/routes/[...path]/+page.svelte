@@ -10,7 +10,7 @@
 
   import DOMPurify from "isomorphic-dompurify";
   import "katex/dist/katex.css";
-  import { Carta, Markdown, MarkdownEditor } from "carta-md";
+  import { Carta, Markdown, MarkdownEditor, type Plugin } from "carta-md";
 
   // Your MD plugins (assume imported as before)
   import cartawiki from "./lib/cartawiki";
@@ -18,11 +18,11 @@
   import everforest_light from "shiki/themes/everforest-light.mjs";
   import min_dark from "shiki/themes/min-dark.mjs";
   import min_light from "shiki/themes/min-light.mjs";
-  import remarkImages from "./lib/mdplugins/remarkImages";
 
   import FileTree from "./lib/FileTree.svelte";
   import Icon from "@iconify/svelte";
   import ToC from "$lib/components/ToC.svelte";
+  import rehypeMermaid from "rehype-mermaid";
 
   import { invoke } from "@tauri-apps/api/core";
   import { page } from "$app/stores";
@@ -45,12 +45,15 @@
   const git = "richwill28";
   const email = "richwindsor@email.com";
 
+  let currentVirtualPath = $state("");
+
   // Add content fetching
   async function fetchContent() {
     try {
-      const path = $page.params.path || "";
+      const path = $page.params.path || "home.md";
       // Replace %20 with a space in the path
       const decodedPath = path.replace(/%20/g, " ");
+      currentVirtualPath = decodedPath;
       console.log("Fetching content for path:", decodedPath);
       const response = await invoke("get_page_content", {
         virtualPath: decodedPath,
@@ -162,7 +165,6 @@
         text: h.textContent || "",
         level: Number(h.tagName.substring(1)),
       }));
-      console.log("Extracted Headings:", headings);
 
       // Create a new IntersectionObserver for the new headings.
       observer = new IntersectionObserver(
@@ -207,6 +209,18 @@
     ),
   ];
 
+  const mermaid: Plugin = {
+    transformers: [
+      {
+        execution: "async",
+        type: "rehype",
+        transform({ processor }) {
+          processor.use(rehypeMermaid, { strategy: "img-png" });
+        },
+      },
+    ],
+  };
+
   let editorTheme = $state(min_light);
 
   function initializeCarta() {
@@ -222,6 +236,7 @@
         cartawiki,
         component(mapped, initializeComponents),
         math(),
+        mermaid,
         anchor(),
         code({
           langs: [
@@ -251,6 +266,7 @@
         component(mapped, initializeComponents),
         math(),
         anchor(),
+        mermaid,
         code({
           langs: [
             "javascript",
@@ -284,6 +300,56 @@
 
   onDestroy(() => {
     window.removeEventListener("keydown", handleKeyDown);
+  });
+
+  $inspect(md);
+  $inspect(currentVirtualPath);
+
+  let autoSaveTimer: any = null;
+  let savingStatus: "" | "saving" | "saved" = $state("");
+
+  $effect(() => {
+    // Clear the previous timer if it exists.
+    const deps = [md, currentVirtualPath, isEditing];
+
+    // Only set auto-save when editing.
+    if (isEditing) {
+      clearTimeout(autoSaveTimer);
+      autoSaveTimer = setTimeout(async () => {
+        if (md) {
+          // Use a default virtual path if currentVirtualPath is empty.
+          const effectivePath =
+            currentVirtualPath && currentVirtualPath.trim().length > 0
+              ? currentVirtualPath
+              : "home.md";
+
+          savingStatus = "saving";
+          try {
+            // Pass both required arguments (using null for `path`).
+            await invoke("update_page_content", {
+              content: md,
+              path: null,
+              virtualPath: effectivePath,
+            });
+            savingStatus = "saved";
+            console.log("Auto-save succeeded.");
+            // Clear the saved status after 2 seconds.
+            setTimeout(() => {
+              savingStatus = "";
+            }, 2000);
+          } catch (error) {
+            console.error("Auto-save failed:", error);
+            savingStatus = "";
+          }
+        } else {
+          console.warn("Auto-save aborted: Missing content", { md });
+        }
+      }, 500);
+    }
+  });
+
+  onDestroy(() => {
+    clearTimeout(autoSaveTimer);
   });
 </script>
 
@@ -372,7 +438,7 @@
           {#key currentTheme}
             <MarkdownEditor
               {carta}
-              value={md}
+              bind:value={md}
               disableToolbar={true}
               theme={"tw"}
             />
@@ -398,6 +464,18 @@
   <div class="fixed top-5 right-5 flex w-[300px] justify-start">
     <ToC {headings} {activeHeading} />
   </div>
+
+  {#if savingStatus}
+    <div
+      class="fixed bottom-5 right-5 bg-black bg-opacity-70 text-white px-5 py-3 rounded text-sm z-50"
+    >
+      {#if savingStatus === "saving"}
+        Saving...
+      {:else if savingStatus === "saved"}
+        Saved!
+      {/if}
+    </div>
+  {/if}
 </div>
 
 <!-- (Optional) Global styles for markdown, etc. -->
