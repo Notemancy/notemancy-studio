@@ -23,6 +23,7 @@
     "@tailwindcss/vite": "^4.0.7",
     "@tauri-apps/api": "^2.2.0",
     "@tauri-apps/plugin-opener": "^2",
+    "bits-ui": "^1.3.4",
     "carta-md": "^4.7.0",
     "isomorphic-dompurify": "^2.22.0",
     "katex": "^0.16.21",

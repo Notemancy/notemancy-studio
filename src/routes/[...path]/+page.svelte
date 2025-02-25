@@ -17,6 +17,7 @@
 
   // Your MD plugins (assume imported as before)
   import cartawiki from "./lib/cartawiki";
+  import CommandPalette from "./lib/CommandPalette.svelte";
   import everforest_dark from "shiki/themes/everforest-dark.mjs";
   import everforest_light from "shiki/themes/everforest-light.mjs";
   import min_dark from "shiki/themes/min-dark.mjs";
@@ -300,13 +301,29 @@
   );
 
   let isEditing = $state(false);
+  let showCommandPalette = $state(false);
 
-  // Set up global keyboard shortcuts for toggling modes.
   function handleKeyDown(event: KeyboardEvent) {
+    // Close palette on Escape if it's open
+    if (event.key === "Escape" && showCommandPalette) {
+      closeCommandPalette();
+      event.preventDefault();
+      return;
+    }
+    // Toggle editing mode with Ctrl + L
     if (event.ctrlKey && event.key.toLowerCase() === "l") {
       isEditing = !isEditing;
       event.preventDefault();
     }
+    // Open command palette with Ctrl + P
+    else if (event.ctrlKey && event.key.toLowerCase() === "p") {
+      showCommandPalette = true;
+      event.preventDefault();
+    }
+  }
+
+  function closeCommandPalette() {
+    showCommandPalette = false;
   }
 
   onMount(() => {
@@ -429,6 +446,22 @@
     class="pl-8 transition-all duration-300"
     style="margin-left: {sidebarWidth};"
   >
+    {#if showCommandPalette}
+      <!-- Overlay: clicking on the overlay closes the palette -->
+      <div
+        class="fixed inset-0 flex items-center justify-center bg-gray-400/60 dark:bg-gray-600/60 backdrop-blur-sm z-50"
+        onclick={closeCommandPalette}
+      >
+        <!-- The inner container stops click events from bubbling up -->
+        <div
+          class="rounded-xl shadow-lg p-0"
+          onclick={(event) => event.stopPropagation()}
+        >
+          <CommandPalette on:close={closeCommandPalette} />
+        </div>
+      </div>
+    {/if}
+
     <!-- Markdown Content Container -->
     <div class="mt-0 max-w-[700px] pt-0">
       <div
