@@ -1,9 +1,15 @@
 use axum::{
+    body::Body,
     extract::State,
+    http::{header, HeaderValue, StatusCode},
+    response::Response,
     routing::{get, post},
     Json, Router,
 };
 use tauri::Emitter;
+
+use base64::Engine as _;
+use mime_guess::from_path;
 
 use notemancy_core::{config, fetch::Fetch, file_ops};
 use serde::{Deserialize, Serialize};
@@ -34,9 +40,53 @@ struct UpdatePageRequest {
     virtual_path: Option<String>,
 }
 
+#[derive(Serialize, Debug)]
+struct AttachmentResponse {
+    content_type: String,
+    data: String, // Base64 encoded data
+}
+
 // Shared state
 struct AppState {
     fetch: Arc<Mutex<Fetch>>,
+}
+
+fn get_attachment_internal(fetch: &Fetch, virtual_path: String) -> Result<Response<Body>, String> {
+    match fetch.get_attachment_content(&virtual_path) {
+        Ok((content, content_type)) => Response::builder()
+            .status(StatusCode::OK)
+            .header(
+                header::CONTENT_TYPE,
+                HeaderValue::from_str(&content_type).map_err(|e| e.to_string())?,
+            )
+            .body(Body::from(content))
+            .map_err(|e| e.to_string()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+async fn web_get_attachment(
+    State(state): State<Arc<AppState>>,
+    path: axum::extract::Path<String>,
+) -> Result<Response<Body>, (StatusCode, String)> {
+    let fetch = state.fetch.lock().await;
+    get_attachment_internal(&fetch, path.0).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+}
+
+#[tauri::command]
+async fn get_attachment(
+    state: tauri::State<'_, FetchState>,
+    virtual_path: String,
+) -> Result<AttachmentResponse, String> {
+    let (content, content_type) = state
+        .0
+        .get_attachment_content(&virtual_path)
+        .map_err(|e| e.to_string())?;
+
+    // Convert binary data to base64
+    let data = base64::engine::general_purpose::STANDARD.encode(&content);
+
+    Ok(AttachmentResponse { content_type, data })
 }
 
 // Web API handlers
@@ -86,28 +136,26 @@ fn get_file_tree_internal(fetch: &Fetch) -> Result<Vec<TreeItem>, String> {
                 if !is_last {
                     current_level = current_level[index].children.as_mut().unwrap();
                 }
-            } else {
-                if is_last {
-                    let mut title = part.to_string();
-                    if let Ok(meta) = serde_json::from_str::<serde_json::Value>(&file.metadata) {
-                        if let Some(meta_title) = meta.get("title").and_then(|t| t.as_str()) {
-                            title = meta_title.to_string();
-                        }
+            } else if is_last {
+                let mut title = part.to_string();
+                if let Ok(meta) = serde_json::from_str::<serde_json::Value>(&file.metadata) {
+                    if let Some(meta_title) = meta.get("title").and_then(|t| t.as_str()) {
+                        title = meta_title.to_string();
                     }
-
-                    current_level.push(TreeItem {
-                        title,
-                        link: Some(file.virtual_path.clone()),
-                        children: None,
-                    });
-                } else {
-                    current_level.push(TreeItem {
-                        title: part.to_string(),
-                        link: None,
-                        children: Some(Vec::new()),
-                    });
-                    current_level = current_level.last_mut().unwrap().children.as_mut().unwrap();
                 }
+
+                current_level.push(TreeItem {
+                    title,
+                    link: Some(file.virtual_path.clone()),
+                    children: None,
+                });
+            } else {
+                current_level.push(TreeItem {
+                    title: part.to_string(),
+                    link: None,
+                    children: Some(Vec::new()),
+                });
+                current_level = current_level.last_mut().unwrap().children.as_mut().unwrap();
             }
         }
     }
@@ -205,6 +253,7 @@ async fn main() {
         .route("/api/file-tree", get(web_get_file_tree))
         .route("/api/page/:path", get(web_get_page_content))
         .route("/api/page", post(web_update_page_content))
+        .route("/api/attachment/:path", get(web_get_attachment))
         .layer(CorsLayer::permissive())
         .with_state(app_state);
 

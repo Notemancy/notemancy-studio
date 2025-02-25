@@ -24,6 +24,8 @@ axum = { version = "0.7", features = ["json"] }
 tokio = { version = "1.0", features = ["full"] }
 tower-http = { version = "0.5", features = ["cors"] }
 tower = { version = "0.4" }
+base64 = "0.21"
+mime_guess = "2.0"
 
 # Add this section for resource bundling
 [package.metadata.bundle]
