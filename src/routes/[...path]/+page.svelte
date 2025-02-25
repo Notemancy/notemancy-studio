@@ -5,7 +5,6 @@
   import rehypeCallouts from "rehype-callouts";
   import "rehype-callouts/theme/vitepress";
 
-  //import Markdown from "svelte-exmarkdown";
   import { math } from "@cartamd/plugin-math";
   import { anchor } from "@cartamd/plugin-anchor";
   import "@cartamd/plugin-code/default.css";
@@ -15,7 +14,6 @@
   import "katex/dist/katex.css";
   import { Carta, Markdown, MarkdownEditor, type Plugin } from "carta-md";
 
-  // Your MD plugins (assume imported as before)
   import cartawiki from "./lib/cartawiki";
   import CommandPalette from "./lib/CommandPalette.svelte";
   import everforest_dark from "shiki/themes/everforest-dark.mjs";
@@ -42,40 +40,29 @@
     metadata: Record<string, any>;
   };
 
-  // Replace props with state
+  //─────────────────────────────
+  // State & Content Fetching
+  //─────────────────────────────
   let md = $state("");
   let metadata = $state({});
-  // Hardcoded values (replacing env variables)
+  let currentVirtualPath = $state("");
+
   const git = "richwill28";
   const email = "richwindsor@email.com";
-
-  let currentVirtualPath = $state("");
 
   async function fetchContent() {
     try {
       const path = $page.params.path || "home.md";
       const decodedPath = path.replace(/%20/g, " ");
       currentVirtualPath = decodedPath;
-
       const response = await api.getPageContent(decodedPath);
-
-      // Handle potential Ok wrapper and validate response
       if (!response || typeof response !== "object") {
         throw new Error(`Invalid response format: ${JSON.stringify(response)}`);
       }
-
-      // Set content and metadata, with fallbacks
       md = response.content || "";
       metadata = response.metadata || {};
     } catch (e) {
       console.error("Error fetching content:", e);
-      console.error("Full error details:", {
-        name: e.name,
-        message: e.message,
-        stack: e.stack,
-        api: api.constructor.name,
-      });
-
       md =
         "Error loading content: " +
         (e instanceof Error ? e.message : String(e));
@@ -83,28 +70,18 @@
     }
   }
 
-  // Replace the effect with our fetch
   $effect(() => {
-    if ($page.params.path) {
-      fetchContent();
-    }
+    if ($page.params.path) fetchContent();
   });
+  onMount(fetchContent);
 
-  onMount(() => {
-    fetchContent();
-  });
-
-  /*──────────────────────────────
-    Dark Mode Toggling & Sidebar
-  ──────────────────────────────*/
+  //─────────────────────────────
+  // Dark Mode & Sidebar
+  //─────────────────────────────
   let currentTheme: "dark" | "light" = $state("light");
   function updateTheme(theme: "dark" | "light") {
     currentTheme = theme;
-    if (theme === "dark") {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
+    document.documentElement.classList.toggle("dark", theme === "dark");
     localStorage.setItem("theme", theme);
   }
   function toggleTheme() {
@@ -140,26 +117,19 @@
     toggleAlignment = sidebarOpen ? "justify-between" : "justify-center";
   });
 
-  /*──────────────────────────────
-    TOC Implementation with $effect
-  ──────────────────────────────*/
-
+  //─────────────────────────────
+  // TOC Extraction (only in preview mode)
+  //─────────────────────────────
   let headings: { id: string; text: string; level: number }[] = $state([]);
   let observer: IntersectionObserver | null = null;
   let activeHeading = $state("");
 
   $effect(async () => {
-    // Wait for the new markdown content to render
-    md;
+    if (isEditing) return;
     await tick();
     const mdElement = document.getElementById("mdcontent");
     if (mdElement) {
-      // Disconnect previous observer if it exists.
-      if (observer) {
-        observer.disconnect();
-      }
-
-      // Extract the headings
+      if (observer) observer.disconnect();
       const headingElements = Array.from(
         mdElement.querySelectorAll("h1, h2, h3, h4, h5, h6"),
       );
@@ -168,46 +138,33 @@
         text: h.textContent || "",
         level: Number(h.tagName.substring(1)),
       }));
-
-      // Create a new IntersectionObserver for the new headings.
       observer = new IntersectionObserver(
         (entries) => {
-          // Choose the first intersecting heading.
           const visibleEntry = entries.find((entry) => entry.isIntersecting);
           if (visibleEntry) {
             activeHeading = visibleEntry.target.id;
           }
         },
-        {
-          root: null,
-          rootMargin: "0px 0px -80% 0px", // Adjust as needed.
-          threshold: 0.1,
-        },
+        { root: null, rootMargin: "0px 0px -80% 0px", threshold: 0.1 },
       );
-
-      // Observe each heading element.
       headingElements.forEach((el) => observer.observe(el));
     }
   });
-
-  // Clean up when the component is destroyed.
   onDestroy(() => {
-    if (observer) {
-      observer.disconnect();
-    }
+    if (observer) observer.disconnect();
   });
 
+  //─────────────────────────────
+  // Carta Editor Initialization
+  //─────────────────────────────
   const mapped = [
     svelteCustom(
       "wiki-link",
-      (node) => {
-        const matched =
-          node.tagName === "a" &&
-          node.properties &&
-          Array.isArray(node.properties.className) &&
-          node.properties.className.includes("wiki-link");
-        return matched;
-      },
+      (node) =>
+        node.tagName === "a" &&
+        node.properties &&
+        Array.isArray(node.properties.className) &&
+        node.properties.className.includes("wiki-link"),
       WikiLinkPreview,
     ),
   ];
@@ -237,16 +194,11 @@
   };
 
   let editorTheme = $state(min_light);
-
   function initializeCarta() {
-    // Choose the editor theme based on current mode.
     editorTheme = currentTheme === "dark" ? min_dark : min_light;
     carta = new Carta({
       theme: editorTheme,
-      shikiOptions: {
-        // Provide both themes for dual mode support.
-        themes: [min_light, min_dark],
-      },
+      shikiOptions: { themes: [min_light, min_dark] },
       extensions: [
         cartawiki,
         component(mapped, initializeComponents),
@@ -273,10 +225,7 @@
   let carta = $state(
     new Carta({
       theme: editorTheme,
-      shikiOptions: {
-        // Provide both themes for dual mode support.
-        themes: [everforest_light, everforest_dark],
-      },
+      shikiOptions: { themes: [everforest_light, everforest_dark] },
       extensions: [
         cartawiki,
         component(mapped, initializeComponents),
@@ -304,81 +253,95 @@
   let showCommandPalette = $state(false);
 
   function handleKeyDown(event: KeyboardEvent) {
-    // Close palette on Escape if it's open
     if (event.key === "Escape" && showCommandPalette) {
       closeCommandPalette();
       event.preventDefault();
       return;
     }
-    // Toggle editing mode with Ctrl + L
     if (event.ctrlKey && event.key.toLowerCase() === "l") {
       isEditing = !isEditing;
       event.preventDefault();
-    }
-    // Open command palette with Ctrl + P
-    else if (event.ctrlKey && event.key.toLowerCase() === "p") {
+    } else if (event.ctrlKey && event.key.toLowerCase() === "p") {
       showCommandPalette = true;
       event.preventDefault();
     }
   }
-
   function closeCommandPalette() {
     showCommandPalette = false;
   }
-
   onMount(() => {
     window.addEventListener("keydown", handleKeyDown);
   });
-
   onDestroy(() => {
     window.removeEventListener("keydown", handleKeyDown);
   });
 
   $inspect(currentVirtualPath);
 
-  let autoSaveTimer: any = null;
+  //─────────────────────────────
+  // Optimized Auto-Save with Debounce and Flush
+  //─────────────────────────────
   let savingStatus: "" | "error" | "saving" | "saved" = $state("");
 
+  // Debounce utility with flush support.
+  function debounce<T extends (...args: any[]) => void>(fn: T, delay: number) {
+    let timeout: ReturnType<typeof setTimeout>;
+    const debounced = (...args: any[]) => {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => fn(...args), delay);
+    };
+    debounced.flush = () => {
+      if (timeout) {
+        clearTimeout(timeout);
+        fn();
+        timeout = null;
+      }
+    };
+    return debounced;
+  }
+
+  async function performAutoSave() {
+    if (!md) {
+      console.warn("Auto-save aborted: Missing content", { md });
+      return;
+    }
+    const effectivePath = currentVirtualPath?.trim() || "home.md";
+    savingStatus = "saving";
+    try {
+      await api.updatePageContent(md, null, effectivePath);
+      savingStatus = "saved";
+      setTimeout(() => (savingStatus = ""), 2000);
+    } catch (error) {
+      console.error("Auto-save failed:", error);
+      savingStatus = "error";
+      setTimeout(() => {
+        if (savingStatus === "error") savingStatus = "";
+      }, 3000);
+    }
+  }
+
+  // Create a debounced version with a 60-second delay.
+  const debouncedAutoSave = debounce(performAutoSave, 60000);
+
+  // Trigger auto-save on changes while editing.
   $effect(() => {
-    const deps = [md, currentVirtualPath, isEditing];
-
-    // Only set auto-save when editing
     if (isEditing) {
-      clearTimeout(autoSaveTimer);
-      autoSaveTimer = setTimeout(async () => {
-        if (!md) {
-          console.warn("Auto-save aborted: Missing content", { md });
-          return;
-        }
-
-        const effectivePath = currentVirtualPath?.trim() || "home.md";
-        savingStatus = "saving";
-
-        try {
-          await api.updatePageContent(md, null, effectivePath);
-          savingStatus = "saved";
-
-          // Clear the saved status after 2 seconds
-          setTimeout(() => {
-            savingStatus = "";
-          }, 2000);
-        } catch (error) {
-          console.error("Auto-save failed:", error);
-          savingStatus = "error";
-
-          // Clear error status after 3 seconds
-          setTimeout(() => {
-            if (savingStatus === "error") {
-              savingStatus = "";
-            }
-          }, 3000);
-        }
-      }, 500);
+      debouncedAutoSave();
     }
   });
 
-  onDestroy(() => {
-    clearTimeout(autoSaveTimer);
+  // Flush pending save when editing stops.
+  let hasFlushed = false;
+  $effect(() => {
+    // When we’re not editing and haven’t already flushed, flush the pending save.
+    if (!isEditing && !hasFlushed) {
+      debouncedAutoSave.flush && debouncedAutoSave.flush();
+      hasFlushed = true;
+    }
+    // Reset the flag when editing starts.
+    if (isEditing) {
+      hasFlushed = false;
+    }
   });
 </script>
 
@@ -470,12 +433,6 @@
         <div class="mt-0 pt-0 text-gray-800 dark:text-gray-50">
           {metadata.title || "Notemancy"}
         </div>
-      </div>
-      <div
-        class="justify-left mb-8 flex items-start gap-5 prose prose-base dark:prose-invert"
-      >
-        <a href={`https://github.com/${git}`} target="_blank">Github</a>
-        <a href={`mailto:${email}`} target="_blank">Email</a>
       </div>
 
       {#if isEditing}
