@@ -23,6 +23,7 @@
   import min_light from "shiki/themes/min-light.mjs";
 
   import FileTree from "./lib/FileTree.svelte";
+  import ConnectedNotes from "./lib/ConnectedNotes.svelte";
   import Icon from "@iconify/svelte";
   import ToC from "$lib/components/ToC.svelte";
   import rehypeMermaid from "rehype-mermaid";
@@ -489,6 +490,8 @@
       {/if}
     </div>
   {/if}
+
+  <ConnectedNotes virtualPath={currentVirtualPath} />
 </div>
 
 <!-- (Optional) Global styles for markdown, etc. -->

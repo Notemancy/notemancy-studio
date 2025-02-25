@@ -73,23 +73,19 @@ async fn web_get_attachment(
     get_attachment_internal(&fetch, path.0).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
 }
 
-#[tauri::command]
-async fn get_attachment(
-    state: tauri::State<'_, FetchState>,
-    virtual_path: String,
-) -> Result<AttachmentResponse, String> {
-    let (content, content_type) = state
-        .0
-        .get_attachment_content(&virtual_path)
-        .map_err(|e| e.to_string())?;
-
-    // Convert binary data to base64
-    let data = base64::engine::general_purpose::STANDARD.encode(&content);
-
-    Ok(AttachmentResponse { content_type, data })
+// New web API handler for referencing notes
+async fn web_get_referencing_notes(
+    State(state): State<Arc<AppState>>,
+    path: axum::extract::Path<String>,
+) -> Json<Result<Vec<String>, String>> {
+    let fetch = state.fetch.lock().await;
+    let result = fetch
+        .get_referencing_notes(&path.0)
+        .map_err(|e| e.to_string());
+    Json(result)
 }
 
-// Web API handlers
+// Web API handlers for file tree and page content remain unchanged.
 async fn web_get_file_tree(
     State(state): State<Arc<AppState>>,
 ) -> Json<Result<Vec<TreeItem>, String>> {
@@ -143,7 +139,6 @@ fn get_file_tree_internal(fetch: &Fetch) -> Result<Vec<TreeItem>, String> {
                         title = meta_title.to_string();
                     }
                 }
-
                 current_level.push(TreeItem {
                     title,
                     link: Some(file.virtual_path.clone()),
@@ -179,7 +174,6 @@ fn get_page_content_internal(fetch: &Fetch, virtual_path: String) -> Result<Page
                 serde_json::from_str(&page_content.metadata)
                     .map_err(|e| format!("Failed to parse metadata JSON: {}", e))?
             };
-
             Ok(PageResponse {
                 content: page_content.content,
                 metadata: metadata_json,
@@ -229,6 +223,17 @@ async fn update_page_content(
     result
 }
 
+#[tauri::command]
+async fn get_referencing_notes(
+    state: tauri::State<'_, FetchState>,
+    target_virtual_path: String,
+) -> Result<Vec<String>, String> {
+    state
+        .0
+        .get_referencing_notes(&target_virtual_path)
+        .map_err(|e| e.to_string())
+}
+
 fn sort_tree(nodes: &mut [TreeItem]) {
     nodes.sort_by(|a, b| a.title.cmp(&b.title));
     for node in nodes.iter_mut() {
@@ -254,6 +259,11 @@ async fn main() {
         .route("/api/page/:path", get(web_get_page_content))
         .route("/api/page", post(web_update_page_content))
         .route("/api/attachment/:path", get(web_get_attachment))
+        // New endpoint for referencing notes
+        .route(
+            "/api/referencing-notes/:path",
+            get(web_get_referencing_notes),
+        )
         .layer(CorsLayer::permissive())
         .with_state(app_state);
 
@@ -271,7 +281,8 @@ async fn main() {
         .invoke_handler(tauri::generate_handler![
             get_page_content,
             get_file_tree,
-            update_page_content
+            update_page_content,
+            get_referencing_notes
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
